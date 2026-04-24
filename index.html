@@ -95,87 +95,81 @@
             }
         }
 
-        function performAudit() {
-            const raw = allText.toUpperCase();
-            const zone = document.getElementById('analysis-zone');
-            
-            // 1. TRÍCH XUẤT MÃ BỆNH (ICD-10)
-            const icdRegex = /[A-Z][0-9]{2}(\.[0-9])?/g;
-            let uniqueICDs = [...new Set(raw.match(icdRegex) || [])];
-
-            // 2. PHÂN TÍCH THUỐC & CHỈ ĐỊNH
-            const lines = allText.split('\n');
-            let analysisHTML = '';
-            
-            // Danh mục từ khóa đơn vị tính để xác định DÒNG THUỐC
-            const unitKeywords = ['VIÊN', 'ỐNG', 'GÓI', 'MG', 'ML', 'CHAI', 'LỌ'];
-            // Danh mục từ khóa loại bỏ DÒNG CHẨN ĐOÁN (để không bị lọt vào bảng thuốc)
-            const excludeKeywords = ['CHẨN ĐOÁN', 'KÈM THEO', 'BỆNH LÝ', 'ICD'];
-
-            // THUẬT TOÁN TINH LỌC V6.1 - CHỈ LẤY TÊN THUỐC
-lines.forEach(line => {
-    let l = line.trim().toUpperCase();
+       function performAudit() {
+    const raw = allText.toUpperCase();
+    const zone = document.getElementById('analysis-zone');
     
-    // 1. Điều kiện xác định dòng thuốc:
-    // Phải chứa đơn vị tính (VIÊN, ỐNG...) NHƯNG không chứa các từ khóa hướng dẫn
-    const drugKeywords = ['VIÊN', 'ỐNG', 'GÓI', 'MG', 'ML', 'CHAI', 'LỌ'];
-    const instructionKeywords = ['UỐNG', 'NGÀY', 'LẦN', 'MỖI', 'SAU ĂN', 'TRƯỚC ĂN', 'CHIA'];
-    const excludeKeywords = ['CHẨN ĐOÁN', 'KÈM THEO', 'BỆNH LÝ', 'ICD'];
+    // 1. Quét mã ICD-10 (Giữ nguyên vì đã chạy tốt)
+    const icdRegex = /[A-Z][0-9]{2}(\.[0-9])?/g;
+    let uniqueICDs = [...new Set(raw.match(icdRegex) || [])];
 
-    const hasDrugUnit = drugKeywords.some(unit => l.includes(unit));
-    const isInstruction = instructionKeywords.some(ins => l.includes(ins));
-    const isHeader = excludeKeywords.some(ex => l.includes(ex));
+    const lines = allText.split('\n');
+    let analysisHTML = '';
+    
+    // 2. Danh sách các cụm từ "CẤM" xuất hiện trong tên thuốc (Loại bỏ hướng dẫn)
+    const banList = ['UỐNG', 'NGÀY', 'LẦN', 'MỖI', 'SAU ĂN', 'TRƯỚC ĂN', 'SÁNG', 'TỐI', 'CHIA'];
 
-    if (hasDrugUnit && !isInstruction && !isHeader && l.length > 5) {
-        // 2. Xử lý cắt bỏ phần số lượng thừa ở cuối dòng (ví dụ: "... 40 VIÊN")
-        // Chúng ta chỉ lấy phần tên thuốc phía trước
-        let cleanName = line.trim().replace(/\s+\d+\s+(Viên|Gói|Ống|Lọ|Chai|Mg|Ml).*$/i, "");
+    lines.forEach(line => {
+        let l = line.trim().toUpperCase();
         
-        let status = '<span class="text-green-600">✓ PHÙ HỢP</span>';
-        let reviewNote = 'Chỉ định phù hợp chẩn đoán.';
+        // Điều kiện xác định dòng TÊN THUỐC sạch:
+        // - Có chứa đơn vị tính thuốc
+        // - KHÔNG chứa bất kỳ từ nào trong banList (hướng dẫn sử dụng)
+        // - KHÔNG phải là dòng chẩn đoán
+        const hasUnit = /(VIÊN|ỐNG|GÓI|CHAI|LỌ|MG|ML)/i.test(l);
+        const isInstruction = banList.some(word => l.includes(word));
+        const isDiagnosis = /CHẨN ĐOÁN|KÈM THEO|BỆNH LÝ/i.test(l);
 
-        // Đối soát chuyên môn với mã ICD
-        if (l.includes('ATOR') || l.includes('STATIN')) {
-            const hasValidCode = uniqueICDs.some(c => c.startsWith('E78') || c.startsWith('I10'));
-            if (!hasValidCode) {
-                status = '<span class="text-red-600">⚠ KIỂM TRA</span>';
-                reviewNote = 'Cần bổ sung mã ICD-10 về rối loạn Lipid.';
+        if (hasUnit && !isInstruction && !isDiagnosis && l.length > 5) {
+            
+            // XỬ LÝ Ô VUÔNG ĐỎ: Cắt bỏ số lượng (ví dụ "40 Viên") ở cuối dòng
+            // Thuật toán: Tìm số cuối cùng đứng trước đơn vị tính và cắt bỏ từ đó
+            let cleanName = line.trim().replace(/\s*\d+\s*(Viên|Gói|Ống|Lọ|Chai|Mg|Ml).*$/i, "").trim();
+            
+            // Xử lý lỗi OCR (ví dụ "L Ad-Liver" thành "1. Ad-Liver")
+            cleanName = cleanName.replace(/^[LI|!]\s*/i, "1. ");
+
+            let status = '<span class="text-green-600 font-bold">✓ PHÙ HỢP</span>';
+            let note = 'Chỉ định đúng theo mã bệnh hệ thống.';
+
+            // Logic phân tích lâm sàng (Ví dụ cho Atorvastatin)
+            if (l.includes('ATOR') || l.includes('STATIN')) {
+                if (!uniqueICDs.some(c => c.startsWith('E78') || c.startsWith('I10'))) {
+                    status = '<span class="text-red-600 font-bold">⚠ KIỂM TRA</span>';
+                    note = 'Thuốc mỡ máu nhưng thiếu mã bệnh E78/I10.';
+                }
             }
-        }
 
-        analysisHTML += `
-            <tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                <td class="p-4">
-                    <div class="font-bold text-slate-800 text-xs">${cleanName}</div>
-                    <div class="text-[9px] text-slate-500 mt-1 italic">● ${reviewNote}</div>
-                </td>
-                <td class="p-4 text-center font-black text-[10px] whitespace-nowrap">${status}</td>
-            </tr>`;
-    }
-});
-
-            zone.innerHTML = `
-                <div class="p-5 bg-blue-50 rounded-2xl border border-blue-100 mb-6">
-                    <p class="text-[10px] font-black text-blue-900 uppercase mb-3 tracking-widest italic">Mã bệnh ghi nhận từ đa nguồn:</p>
-                    <div class="flex flex-wrap gap-2">
-                        ${uniqueICDs.map(c => `<span class="icd-badge bg-white shadow-sm">${c}</span>`).join('') || '<span class="text-red-500">Không tìm thấy mã ICD</span>'}
-                    </div>
-                </div>
-                <div class="rounded-2xl border-2 border-slate-100 overflow-hidden bg-white shadow-xl">
-                    <table class="w-full">
-                        <thead class="bg-slate-900 text-white text-[10px] uppercase">
-                            <tr>
-                                <th class="p-4 text-left tracking-widest">Nội dung chỉ định & Phân tích</th>
-                                <th class="p-4 text-center tracking-widest">Đánh giá</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${analysisHTML || '<tr><td colspan="2" class="p-20 text-center text-slate-400 italic">Không nhận diện được dòng thuốc nào...</td></tr>'}
-                        </tbody>
-                    </table>
-                </div>`;
-            document.getElementById('ai-status').classList.add('hidden');
+            analysisHTML += `
+                <tr class="border-b border-slate-50">
+                    <td class="p-4">
+                        <div class="font-bold text-slate-800 text-[11px]">${cleanName}</div>
+                        <div class="text-[9px] text-slate-400 mt-1 italic">● ${note}</div>
+                    </td>
+                    <td class="p-4 text-center text-[10px] whitespace-nowrap">${status}</td>
+                </tr>`;
         }
+    });
+
+    // Cập nhật giao diện mới sạch sẽ
+    zone.innerHTML = `
+        <div class="bg-blue-50/50 p-4 rounded-xl mb-4 border border-blue-100">
+            <p class="text-[9px] font-black text-blue-800 uppercase mb-2 tracking-tighter">Mã bệnh (ICD-10):</p>
+            <div class="flex flex-wrap gap-1">
+                ${uniqueICDs.map(c => `<span class="bg-white px-2 py-1 rounded border border-blue-200 text-[10px] font-bold text-blue-700">${c}</span>`).join('')}
+            </div>
+        </div>
+        <div class="overflow-hidden rounded-xl border border-slate-200 shadow-sm">
+            <table class="w-full text-left bg-white">
+                <thead class="bg-slate-50 text-[9px] font-black text-slate-500 uppercase">
+                    <tr><th class="p-3">Tên thuốc phân tích</th><th class="p-3 text-center">Đánh giá</th></tr>
+                </thead>
+                <tbody>${analysisHTML || '<tr><td colspan="2" class="p-10 text-center text-slate-300">Đang đợi dữ liệu thuốc sạch...</td></tr>'}</tbody>
+            </table>
+        </div>`;
+    
+    document.getElementById('ai-status').classList.add('hidden');
+}
     </script>
 </body>
 </html>
