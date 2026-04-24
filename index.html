@@ -109,45 +109,47 @@
     // 2. Danh sách các cụm từ "CẤM" xuất hiện trong tên thuốc (Loại bỏ hướng dẫn)
     const banList = ['UỐNG', 'NGÀY', 'LẦN', 'MỖI', 'SAU ĂN', 'TRƯỚC ĂN', 'SÁNG', 'TỐI', 'CHIA'];
 
-    lines.forEach(line => {
+   lines.forEach(line => {
     let l = line.trim().toUpperCase();
     
-    // ĐIỀU KIỆN CHỌN DÒNG THUỐC: Có đơn vị tính và không phải dòng tiêu đề chẩn đoán
-    const drugKeywords = ['VIÊN', 'ỐNG', 'GÓI', 'MG', 'ML', 'CHAI', 'LỌ'];
+    // 1. Chỉ nhận dòng có đơn vị tính và KHÔNG phải dòng chẩn đoán
+    const drugUnits = ['VIÊN', 'ỐNG', 'GÓI', 'CHAI', 'LỌ', 'MG', 'ML'];
     const isDiagnosis = /CHẨN ĐOÁN|KÈM THEO|BỆNH LÝ|ICD/i.test(l);
-    const hasUnit = drugKeywords.some(unit => l.includes(unit));
+    const hasUnit = drugUnits.some(unit => l.includes(unit));
 
     if (hasUnit && !isDiagnosis && l.length > 5) {
-        // BƯỚC 1: Xóa lỗi OCR đầu dòng (L, I, !)
-        let cleanName = line.trim().replace(/^[LI|!]\s*/i, "1. ");
+        // BƯỚC A: Cắt bỏ hoàn toàn từ các từ khóa hướng dẫn hoặc dấu phẩy/chấm thừa
+        // Thuật toán tìm vị trí xuất hiện sớm nhất của các từ rác để cắt
+        let splitIndex = l.search(/UỐNG|NGÀY|MỖI|LIỀU|SÁNG|CHIỀU|TỐI|SAU ĂN|TRƯỚC ĂN/i);
+        let cleanName = (splitIndex !== -1) ? line.substring(0, splitIndex) : line;
 
-        // BƯỚC 2: CẮT ĐUÔI - Xóa mọi thứ từ chữ "Uống", "Ngày", hoặc Số lượng ở cuối
-        // Thuật toán này giữ lại Tên thuốc và nồng độ (mg/ml) nhưng bỏ hướng dẫn
-        cleanName = cleanName.split(/Uống|uống|Ngày|ngày|Mỗi|mỗi|\d+\s*(Viên|Gói|Ống|Lọ|Chai)/i)[0].trim();
-        
-        // Xóa các dấu gạch ngang hoặc ký tự thừa còn sót lại ở cuối sau khi cắt
-        cleanName = cleanName.replace(/[-.:\s]+$/, "");
+        // BƯỚC B: Xóa số lượng thừa ở cuối (Ví dụ: "56 - Viên", "20 - Gói")
+        // Tìm và xóa cụm: [Khoảng trắng][Số][Dấu gạch/cách][Đơn vị tính]
+        cleanName = cleanName.replace(/\s+\d+\s*[-]\s*(Viên|Gói|Ống|Lọ|Chai|Mg|Ml).*$/i, "");
+        cleanName = cleanName.replace(/\s+\d+\s+(Viên|Gói|Ống|Lọ|Chai|Mg|Ml).*$/i, "");
+
+        // BƯỚC C: Dọn dẹp lỗi OCR đầu dòng (L, I, !, -)
+        cleanName = cleanName.trim().replace(/^[LI|!|\-|\d.]+\s*/i, "");
 
         if (cleanName.length > 3) {
             let status = '<span class="text-green-600 font-bold">✓ PHÙ HỢP</span>';
-            let note = 'Chỉ định đúng mã bệnh.';
+            let note = 'Chỉ định phù hợp với chẩn đoán mã bệnh.';
 
-            // Phân tích chuyên môn cho Atorvastatin (Lipid)
+            // Đối soát mã ICD cho nhóm Statin
             if (l.includes('ATOR') || l.includes('STATIN')) {
-                const lipidCodes = ['E78', 'I10'];
-                if (!uniqueICDs.some(c => lipidCodes.some(code => c.startsWith(code)))) {
+                if (!uniqueICDs.some(c => c.startsWith('E78') || c.startsWith('I10'))) {
                     status = '<span class="text-red-600 font-bold">⚠ KIỂM TRA</span>';
-                    note = 'Thiếu mã bệnh liên quan đến Lipid máu.';
+                    note = 'Cảnh báo: Thiếu mã ICD liên quan đến mỡ máu.';
                 }
             }
 
             analysisHTML += `
                 <tr class="border-b border-slate-50">
                     <td class="p-4">
-                        <div class="font-bold text-slate-800 text-[11px]">${cleanName}</div>
-                        <div class="text-[9px] text-slate-400 mt-1 italic">● ${note}</div>
+                        <div class="font-extrabold text-slate-800 text-[11px] uppercase tracking-tight">${cleanName.trim()}</div>
+                        <div class="text-[9px] text-slate-400 mt-0.5">● ${note}</div>
                     </td>
-                    <td class="p-4 text-center text-[10px] font-bold">${status}</td>
+                    <td class="p-4 text-center text-[10px] font-black">${status}</td>
                 </tr>`;
         }
     }
