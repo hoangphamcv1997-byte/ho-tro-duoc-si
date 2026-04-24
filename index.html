@@ -112,38 +112,47 @@
             // Danh mục từ khóa loại bỏ DÒNG CHẨN ĐOÁN (để không bị lọt vào bảng thuốc)
             const excludeKeywords = ['CHẨN ĐOÁN', 'KÈM THEO', 'BỆNH LÝ', 'ICD'];
 
-            lines.forEach(line => {
-                let l = line.trim().toUpperCase();
-                
-                // Điều kiện lọc Thuốc: Có đơn vị tính VÀ không chứa từ khóa chẩn đoán
-                const isDrugLine = unitKeywords.some(unit => l.includes(unit)) && 
-                                 !excludeKeywords.some(ex => l.includes(ex));
+            // THUẬT TOÁN TINH LỌC V6.1 - CHỈ LẤY TÊN THUỐC
+lines.forEach(line => {
+    let l = line.trim().toUpperCase();
+    
+    // 1. Điều kiện xác định dòng thuốc:
+    // Phải chứa đơn vị tính (VIÊN, ỐNG...) NHƯNG không chứa các từ khóa hướng dẫn
+    const drugKeywords = ['VIÊN', 'ỐNG', 'GÓI', 'MG', 'ML', 'CHAI', 'LỌ'];
+    const instructionKeywords = ['UỐNG', 'NGÀY', 'LẦN', 'MỖI', 'SAU ĂN', 'TRƯỚC ĂN', 'CHIA'];
+    const excludeKeywords = ['CHẨN ĐOÁN', 'KÈM THEO', 'BỆNH LÝ', 'ICD'];
 
-                if (isDrugLine && l.length > 5) {
-                    let status = '<span class="text-green-600">✓ HỢP LỆ</span>';
-                    let reviewNote = 'Đúng đơn vị tính lâm sàng.';
+    const hasDrugUnit = drugKeywords.some(unit => l.includes(unit));
+    const isInstruction = instructionKeywords.some(ins => l.includes(ins));
+    const isHeader = excludeKeywords.some(ex => l.includes(ex));
 
-                    // Kiểm tra logic nhóm Statin (Ví dụ Atorvastatin/Atoris)
-                    if (l.includes('ATOR') || l.includes('STATIN')) {
-                        const hasLipidCode = uniqueICDs.some(c => c.startsWith('E78') || c.startsWith('I10'));
-                        if (!hasLipidCode) {
-                            status = '<span class="text-red-600">⚠ CẢNH BÁO</span>';
-                            reviewNote = 'Thiếu mã bệnh rối loạn Lipid máu (E78) hoặc HA (I10).';
-                        } else {
-                            reviewNote = 'Chỉ định phù hợp với chẩn đoán mã bệnh.';
-                        }
-                    }
+    if (hasDrugUnit && !isInstruction && !isHeader && l.length > 5) {
+        // 2. Xử lý cắt bỏ phần số lượng thừa ở cuối dòng (ví dụ: "... 40 VIÊN")
+        // Chúng ta chỉ lấy phần tên thuốc phía trước
+        let cleanName = line.trim().replace(/\s+\d+\s+(Viên|Gói|Ống|Lọ|Chai|Mg|Ml).*$/i, "");
+        
+        let status = '<span class="text-green-600">✓ PHÙ HỢP</span>';
+        let reviewNote = 'Chỉ định phù hợp chẩn đoán.';
 
-                    analysisHTML += `
-                        <tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                            <td class="p-4">
-                                <div class="font-bold text-slate-800 text-xs">${line.trim()}</div>
-                                <div class="text-[10px] text-slate-500 mt-1 italic">● ${reviewNote}</div>
-                            </td>
-                            <td class="p-4 text-center font-black text-[10px] whitespace-nowrap">${status}</td>
-                        </tr>`;
-                }
-            });
+        // Đối soát chuyên môn với mã ICD
+        if (l.includes('ATOR') || l.includes('STATIN')) {
+            const hasValidCode = uniqueICDs.some(c => c.startsWith('E78') || c.startsWith('I10'));
+            if (!hasValidCode) {
+                status = '<span class="text-red-600">⚠ KIỂM TRA</span>';
+                reviewNote = 'Cần bổ sung mã ICD-10 về rối loạn Lipid.';
+            }
+        }
+
+        analysisHTML += `
+            <tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                <td class="p-4">
+                    <div class="font-bold text-slate-800 text-xs">${cleanName}</div>
+                    <div class="text-[9px] text-slate-500 mt-1 italic">● ${reviewNote}</div>
+                </td>
+                <td class="p-4 text-center font-black text-[10px] whitespace-nowrap">${status}</td>
+            </tr>`;
+    }
+});
 
             zone.innerHTML = `
                 <div class="p-5 bg-blue-50 rounded-2xl border border-blue-100 mb-6">
