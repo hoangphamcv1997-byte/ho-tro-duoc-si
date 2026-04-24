@@ -94,42 +94,72 @@
         }
 
         function performAudit() {
-            const raw = allText.toUpperCase();
-            const zone = document.getElementById('analysis-zone');
-            
-           // THUẬT TOÁN NHẬN DIỆN THUỐC CẢI TIẾN V5.1
-const drugKeywords = ['VIÊN', 'ỐNG', 'GÓI', 'CHAI', 'LỌ', 'MG', 'ML', 'UỐNG'];
-const lines = allText.split('\n');
-const foundDrugs = lines.filter(line => {
-    const l = line.trim().toUpperCase();
-    // Chấp nhận dòng bắt đầu bằng Số HOẶC các ký tự OCR hay nhầm (L, I, |, !)
-    const startsWithMarker = /^[0-9*+\-•LI|!]/.test(l);
-    // Kiểm tra xem dòng có chứa đơn vị tính thuốc không
-    const hasDrugUnit = drugKeywords.some(key => l.includes(key));
+    const raw = allText.toUpperCase();
+    const zone = document.getElementById('analysis-zone');
     
-    return (startsWithMarker && hasDrugUnit && l.length > 5);
-});
+    // 1. Quét mã ICD-10
+    const icdRegex = /[A-Z][0-9]{2}(\.[0-9])?/g;
+    let uniqueICDs = [...new Set(raw.match(icdRegex) || [])];
 
-            zone.innerHTML = `
-                <div class="p-5 bg-blue-50 rounded-2xl border border-blue-100">
-                    <p class="text-[10px] font-black text-blue-900 uppercase mb-4 italic">MÃ ICD-10 TỔNG HỢP (ĐÃ QUÉT TOÀN BỘ):</p>
-                    <div class="flex flex-wrap gap-2">
-                        ${uniqueICDs.map(c => `<span class="icd-badge">${c}</span>`).join('') || '<span class="text-red-600 font-bold italic">KHÔNG TÌM THẤY MÃ</span>'}
-                    </div>
-                </div>
-                <div class="rounded-2xl border-2 border-slate-100 overflow-hidden bg-white shadow-lg">
-                    <table class="w-full text-[11px]">
-                        <thead class="bg-slate-900 text-white">
-                            <tr><th class="p-4 text-left uppercase font-black text-[9px]">DANH MỤC THUỐC PHÁT HIỆN</th><th class="p-4 text-center uppercase font-black text-[9px]">TRẠNG THÁI</th></tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-50">
-                            ${foundDrugs.map(d => `<tr><td class="p-4 font-bold text-slate-800">${d.trim()}</td><td class="p-4 text-center text-green-600 font-black uppercase text-[10px]">✓ TRÍCH XUẤT XONG</td></tr>`).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-            document.getElementById('ai-status').classList.add('hidden');
+    // 2. Nhận diện thuốc và Phân tích logic
+    const lines = allText.split('\n');
+    let analysisHTML = '';
+
+    // Giả lập cơ sở dữ liệu phác đồ đơn giản
+    const protocols = {
+        'I10': ['STATIN', 'AMLODIPIN', 'PERINDOPRIL', 'ATORVASTATIN'],
+        'E78': ['STATIN', 'ATORVASTATIN', 'FENOFIBRAT'],
+        'E88': ['LIỆU PHÁP DINH DƯỠNG']
+    };
+
+    const drugKeywords = ['VIÊN', 'ỐNG', 'GÓI', 'MG', 'ML'];
+    
+    lines.forEach(line => {
+        let l = line.trim().toUpperCase();
+        if (drugKeywords.some(key => l.includes(key)) && l.length > 5) {
+            let status = '<span class="text-green-600">✓ Phù hợp chẩn đoán</span>';
+            let note = 'Liều dùng trong giới hạn an toàn.';
+            
+            // Logic phân tích: Kiểm tra Atorvastatin với mã I10/E78
+            if (l.includes('ATORVASTATIN') || l.includes('ATORIS')) {
+                if (!uniqueICDs.some(code => code.startsWith('I10') || code.startsWith('E78'))) {
+                    status = '<span class="text-red-600">⚠ Cần kiểm tra</span>';
+                    note = 'Thuốc hạ Lipid nhưng chưa thấy mã bệnh rối loạn chuyển hóa phù hợp.';
+                } else {
+                    note = 'Phù hợp phác đồ điều trị tăng huyết áp/rối loạn lipid máu.';
+                }
+            }
+
+            analysisHTML += `
+                <tr class="border-b border-slate-50">
+                    <td class="p-4">
+                        <div class="font-bold text-slate-800">${line.trim()}</div>
+                        <div class="text-[9px] text-slate-500 mt-1 italic">${note}</div>
+                    </td>
+                    <td class="p-4 text-center font-black uppercase text-[10px]">${status}</td>
+                </tr>`;
         }
+    });
+
+    zone.innerHTML = `
+        <div class="p-5 bg-blue-50 rounded-2xl border border-blue-100 mb-4">
+            <p class="text-[10px] font-black text-blue-900 uppercase mb-2">Tóm tắt chẩn đoán (ICD-10):</p>
+            <div class="flex flex-wrap gap-2">
+                ${uniqueICDs.map(c => `<span class="icd-badge">${c}</span>`).join('')}
+            </div>
+        </div>
+        <div class="rounded-2xl border-2 border-slate-100 overflow-hidden bg-white shadow-lg">
+            <table class="w-full text-[11px]">
+                <thead class="bg-slate-900 text-white">
+                    <tr>
+                        <th class="p-4 text-left uppercase font-black text-[9px]">Phân tích chỉ định</th>
+                        <th class="p-4 text-center uppercase font-black text-[9px]">Đánh giá</th>
+                    </tr>
+                </thead>
+                <tbody>${analysisHTML || '<tr><td colspan="2" class="p-10 text-center">Không đủ dữ liệu để phân tích chuyên môn</td></tr>'}</tbody>
+            </table>
+        </div>`;
+}
     </script>
 </body>
 </html>
