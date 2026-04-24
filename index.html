@@ -110,36 +110,39 @@
     const banList = ['UỐNG', 'NGÀY', 'LẦN', 'MỖI', 'SAU ĂN', 'TRƯỚC ĂN', 'SÁNG', 'TỐI', 'CHIA'];
 
   lines.forEach(line => {
+    // 1. Chuẩn hóa chuỗi: Bỏ khoảng trắng thừa, chuyển về chữ hoa
     let l = line.trim().toUpperCase();
     
-    // 1. NHẬN DIỆN DÒNG RÁC (Cần loại bỏ)
-    // Nếu dòng chứa chữ "UỐNG" hoặc "NGÀY" (kể cả có dấu phẩy đi kèm) -> BỎ QUA LUÔN
-    const isTrash = /UỐNG|NGÀY|LIỀU|MỖI|CHIA|SÁNG|TỐI|SAU ĂN/i.test(l);
+    // 2. DANH SÁCH TỪ KHÓA RÁC (Nếu dòng có chứa từ này là LOẠI BỎ LUÔN)
+    // Tôi thêm các biến thể dấu câu thường gặp để chặn đứng
+    const trashKeywords = ['UỐNG', 'NGÀY', 'MỖI', 'LIỀU', 'CHIA', 'SÁNG', 'TỐI', 'SAU ĂN', 'TRƯỚC ĂN'];
+    const isTrash = trashKeywords.some(word => l.includes(word));
     const isDiagnosis = /CHẨN ĐOÁN|KÈM THEO|BỆNH LÝ|ICD/i.test(l);
 
-    // 2. NHẬN DIỆN DÒNG THUỐC (Cần giữ lại)
+    // 3. ĐIỀU KIỆN NHẬN DIỆN DÒNG THUỐC
     const drugUnits = ['VIÊN', 'ỐNG', 'GÓI', 'CHAI', 'LỌ', 'MG', 'ML'];
     const hasUnit = drugUnits.some(unit => l.includes(unit));
 
-    // CHỈ XỬ LÝ NẾU: Có đơn vị thuốc VÀ KHÔNG phải dòng rác/chẩn đoán
+    // CHỈ XỬ LÝ: Có đơn vị thuốc VÀ tuyệt đối không chứa từ khóa rác
     if (hasUnit && !isTrash && !isDiagnosis && l.length > 5) {
         
-        // BƯỚC A: Xử lý số lượng thừa ở cuối (Ô VUÔNG ĐỎ)
-        // Cắt bỏ phần "56 - Viên" hoặc "20 Viên" ở cuối dòng
+        // BƯỚC A: CẮT Ô VUÔNG ĐỎ (Số lượng thừa cuối dòng)
+        // Regex này sẽ tìm số cuối cùng đứng trước đơn vị tính và cắt bỏ từ đó
         let cleanName = line.trim().replace(/\s*[-]*\s*\d+\s*(Viên|Gói|Ống|Lọ|Chai|Mg|Ml).*$/i, "");
         
-        // BƯỚC B: Dọn rác đầu dòng (Các ký tự <, L, 1, -)
+        // BƯỚC B: DỌN RÁC ĐẦU DÒNG (Các ký tự <, L, 1, -)
         cleanName = cleanName.replace(/^[<|L|I|!|\-|\d.]+\s*/i, "");
 
         if (cleanName.length > 3) {
             let status = '<span class="text-green-600 font-bold">✓ PHÙ HỢP</span>';
-            let note = 'Chỉ định phù hợp mã bệnh.';
+            let note = 'Chỉ định đúng mã bệnh.';
 
-            // Kiểm tra lâm sàng (Ví dụ nhóm mỡ máu)
+            // Phân tích lâm sàng cho BV ĐA KHOA TỈNH HẢI DƯƠNG
             if (l.includes('ATOR') || l.includes('STATIN')) {
-                if (!uniqueICDs.some(c => c.startsWith('E78') || c.startsWith('I10'))) {
+                const lipidCodes = ['E78', 'I10'];
+                if (!uniqueICDs.some(c => lipidCodes.some(code => c.startsWith(code)))) {
                     status = '<span class="text-red-600 font-bold">⚠ KIỂM TRA</span>';
-                    note = 'Thiếu mã ICD mỡ máu (E78).';
+                    note = 'Thiếu mã bệnh Rối loạn Lipid (E78).';
                 }
             }
 
@@ -147,9 +150,9 @@
                 <tr class="border-b border-slate-50 hover:bg-slate-50">
                     <td class="p-4">
                         <div class="font-bold text-slate-800 text-[11px] uppercase">${cleanName.trim()}</div>
-                        <div class="text-[9px] text-slate-400 mt-0.5 italic">● ${note}</div>
+                        <div class="text-[9px] text-slate-400 mt-0.5">● ${note}</div>
                     </td>
-                    <td class="p-4 text-center text-[10px]">${status}</td>
+                    <td class="p-4 text-center text-[10px] font-black">${status}</td>
                 </tr>`;
         }
     }
