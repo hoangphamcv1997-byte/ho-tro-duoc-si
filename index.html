@@ -61,8 +61,8 @@
         function smartReset() {
             allText = ""; processedCount = 0; totalFiles = 0;
             document.getElementById('preview-container').innerHTML = "";
-            document.getElementById('raw-out').innerText = "...";
-            document.getElementById('analysis-zone').innerHTML = '<p class="text-center py-40 text-slate-300 font-bold uppercase text-xs tracking-[0.2em]">Đang chờ tải dữ liệu...</p>';
+            document.getElementById('raw-out').innerText = "Chưa có dữ liệu...";
+            document.getElementById('analysis-zone').innerHTML = '<p class="text-center py-40 text-slate-300 font-bold uppercase text-xs tracking-[0.2em]">Sẵn sàng phân tích dữ liệu đa nguồn...</p>';
             document.getElementById('file-in').value = "";
         }
         async function handleFiles(input) {
@@ -79,37 +79,43 @@
                     document.getElementById('preview-container').appendChild(img);
                     await runOcr(e.target.result, file.name);
                 };
-                reader.readAsAsDataURL(file);
+                // Dòng đã sửa lỗi ở đây:
+                reader.readAsDataURL(file);
             }
         }
         async function runOcr(data, name) {
-            const { data: { text } } = await Tesseract.recognize(data, 'vie');
-            allText += `\n--- NGUỒN: ${name} ---\n` + text;
-            processedCount++;
-            document.getElementById('status-text').innerText = `ĐANG QUÉT: ${processedCount}/${totalFiles}`;
-            if(processedCount === totalFiles) {
-                document.getElementById('raw-out').innerText = allText;
-                performAudit();
+            try {
+                const { data: { text } } = await Tesseract.recognize(data, 'vie');
+                allText += `\n--- NGUỒN: ${name} ---\n` + text;
+                processedCount++;
+                document.getElementById('status-text').innerText = `ĐANG QUÉT: ${processedCount}/${totalFiles}`;
+                if(processedCount === totalFiles) {
+                    document.getElementById('raw-out').innerText = allText;
+                    performAudit();
+                }
+            } catch (err) {
+                console.error("Lỗi OCR:", err);
+                alert("Không thể tải thư viện nhận diện ảnh. Hãy kiểm tra kết nối mạng.");
             }
         }
         function performAudit() {
             const raw = allText.toUpperCase();
             const zone = document.getElementById('analysis-zone');
-            const icdRegex = /[A-Z][0-9][0-9](\.[0-9])?/g;
+            const icdRegex = /[A-Z][0-9][0-9](\.[0-9])?|[A-Z][0-9][0-9]/g;
             let foundCodes = raw.match(icdRegex) || [];
             let uniqueICDs = [...new Set(foundCodes)];
             const foundDrugs = allText.split('\n').filter(l => /^[0-9]{1,2}\s?[\.\-]\s?/.test(l.trim()));
             zone.innerHTML = `
                 <div class="p-5 bg-blue-50 rounded-2xl border border-blue-100">
-                    <p class="text-[10px] font-black text-blue-900 uppercase mb-4 italic">MÃ ICD-10 GHI NHẬN:</p>
+                    <p class="text-[10px] font-black text-blue-900 uppercase mb-4 italic">MÃ ICD-10 TÌM THẤY:</p>
                     <div class="flex flex-wrap gap-2">
-                        ${uniqueICDs.map(c => `<span class="icd-badge">${c}</span>`).join('') || '<span class="text-red-600 font-bold">CHƯA TÌM THẤY MÃ</span>'}
+                        ${uniqueICDs.map(c => `<span class="icd-badge">${c}</span>`).join('') || '<span class="text-red-600 font-bold italic underline">KHÔNG TÌM THẤY MÃ BỆNH</span>'}
                     </div>
                 </div>
                 <div class="rounded-2xl border-2 border-slate-100 overflow-hidden bg-white shadow-lg">
                     <table class="w-full text-[11px]">
                         <thead class="bg-slate-900 text-white">
-                            <tr><th class="p-4 text-left uppercase font-black text-[9px]">TÊN THUỐC ĐÃ TRÍCH XUẤT</th><th class="p-4 text-center uppercase font-black text-[9px]">TRẠNG THÁI</th></tr>
+                            <tr><th class="p-4 text-left uppercase font-black text-[9px]">TÊN THUỐC</th><th class="p-4 text-center uppercase font-black text-[9px]">TRẠNG THÁI</th></tr>
                         </thead>
                         <tbody class="divide-y divide-slate-50">
                             ${foundDrugs.map(d => `<tr><td class="p-4 font-bold text-slate-800">${d.trim()}</td><td class="p-4 text-center text-green-600 font-black uppercase text-[10px]">✓ HỢP LỆ</td></tr>`).join('')}
